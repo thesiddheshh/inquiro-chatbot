@@ -154,23 +154,49 @@ def download_chat(chat_history):
         txt += f"{role.upper()}:\n{msg}\n\n"
     return txt
 
+# ------------------------------ #
+#     OPENROUTER LLM CALL       #
+# ------------------------------ #
 def query_openrouter_llm(prompt, context):
-    api_key = "#add_your_api_key"
+    api_key = os.getenv("OPENROUTER_API_KEY")
+
+    if not api_key:
+        return "❌ Error: OPENROUTER_API_KEY not set in environment variables."
+
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
+        "HTTP-Referer": "http://localhost:8501",
+        "X-Title": "PDF RAG Chatbot"
     }
+
     payload = {
-        "model": "mistralai/mistral-7b-instruct:free",
+        "model": "openai/gpt-3.5-turbo",
         "messages": [
-            {"role": "system", "content": "You are a helpful assistant. Always provide detailed, complete answers with context and citation."},
-            {"role": "user", "content": f"Answer this question using the following PDF context:\n\n{context}\n\nQuestion: {prompt}"},
+            {
+                "role": "system",
+                "content": "You are a helpful assistant. Provide detailed answers using the given context."
+            },
+            {
+                "role": "user",
+                "content": f"Answer this question using the following PDF context:\n\n{context}\n\nQuestion: {prompt}"
+            },
         ],
     }
+
     try:
-        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=20)
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=20
+        )
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
+
+    except requests.exceptions.HTTPError as http_err:
+        return f"❌ HTTP Error: {str(http_err)}\nResponse: {response.text}"
+
     except Exception as e:
         return f"❌ Error: {str(e)}"
 
@@ -190,17 +216,16 @@ with st.sidebar:
     st.markdown(
         """
         <div class='sidebar-title'>
-            <img src='https://cdn-icons-png.flaticon.com/512/4712/4712109.png' alt='icon' />
+            <img src='https://cdn-icons-png.flaticon.com/512/4712/4712109.png' />
             RAG Chatbot
         </div>
         """,
         unsafe_allow_html=True,
     )
-    st.markdown("---")
 
+    st.markdown("---")
     st.header("📂 Manage PDFs")
 
-    st.subheader("📤 Upload PDFs")
     uploaded_files = st.file_uploader(
         "Upload PDFs", type=["pdf"], accept_multiple_files=True
     )
@@ -211,11 +236,13 @@ with st.sidebar:
                 file_bytes = file.read()
                 file_size = sizeof_fmt(len(file_bytes))
                 file_pages = count_pdf_pages(file_bytes)
+
                 try:
                     text = extract_text_from_pdf(file_bytes)
                 except:
                     st.warning(f"Failed to read {file.name}. Skipping.")
                     continue
+
                 chunks = chunk_text(text)
                 embeddings = embedder.encode(chunks).astype("float32")
                 index = create_faiss_index(embeddings)
@@ -237,7 +264,7 @@ with st.sidebar:
 
     pdf_options = list(st.session_state.pdf_docs.keys())
     multiselect_options = ["All"] + pdf_options
-    selected_raw = st.multiselect("📄 Select one or more PDFs to query:", multiselect_options)
+    selected_raw = st.multiselect("📄 Select PDFs:", multiselect_options)
     selected_pdfs = pdf_options if "All" in selected_raw else selected_raw
 
 # ------------------------------ #
@@ -276,6 +303,9 @@ if prompt := st.chat_input("Ask a question..."):
                 st.markdown(answer)
                 st.session_state.chat_history.append(("assistant", answer))
 
+# ------------------------------ #
+#        DOWNLOAD CHAT          #
+# ------------------------------ #
 if st.session_state.chat_history:
     txt = download_chat(st.session_state.chat_history)
     st.download_button(
