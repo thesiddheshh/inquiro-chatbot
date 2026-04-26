@@ -158,7 +158,7 @@ def download_chat(chat_history):
 #     OPENROUTER LLM CALL       #
 # ------------------------------ #
 def query_openrouter_llm(prompt, context):
-    api_key = os.getenv("OPENROUTER_API_KEY")
+    api_key = st.secrets["OPENROUTER_API_KEY"]
 
     if not api_key:
         return "❌ Error: OPENROUTER_API_KEY not set in environment variables."
